@@ -13,11 +13,12 @@ if (!$AndroidSdk) { $AndroidSdk = $env:ANDROID_SDK_ROOT }
 $taskTools = if ($AndroidSdk) { Join-Path $AndroidSdk 'build-tools\35.0.0' } else { Join-Path $ToolRoot 'build-tools\android-15' }
 $taskPlatform = if ($AndroidSdk) { Join-Path $AndroidSdk 'platforms\android-35\android.jar' } else { Join-Path $ToolRoot 'platforms\android-35-ext15\android.jar' }
 foreach ($taskRequired in @("$taskJdk\javac.exe", "$taskTools\aapt2.exe", $taskPlatform)) { if (!(Test-Path -LiteralPath $taskRequired)) { throw "缺少构建工具：$taskRequired" } }
-New-Item -ItemType Directory -Force -Path $taskOutput,"$taskOutput\generated","$taskOutput\classes","$taskOutput\dex" | Out-Null
+New-Item -ItemType Directory -Force -Path $taskOutput,"$taskOutput\generated","$taskOutput\classes","$taskOutput\dex","$taskOutput\assets" | Out-Null
 Copy-Item -LiteralPath "$PSScriptRoot\res","$PSScriptRoot\src","$PSScriptRoot\AndroidManifest.xml" -Destination $taskOutput -Recurse
+Copy-Item -LiteralPath (Join-Path $taskRoot 'LICENSE') -Destination "$taskOutput\assets\LICENSE" -Force
 function Invoke-Checked([string]$taskExe,[string[]]$taskArgs) { & $taskExe @taskArgs; if ($LASTEXITCODE -ne 0) { throw "构建失败：$taskExe" } }
 Invoke-Checked "$taskTools\aapt2.exe" @('compile','--dir',"$taskOutput\res",'-o',"$taskOutput\resources.zip")
-Invoke-Checked "$taskTools\aapt2.exe" @('link','-o',"$taskOutput\resources.apk",'-I',$taskPlatform,'--manifest',"$taskOutput\AndroidManifest.xml",'--java',"$taskOutput\generated",'--min-sdk-version','29','--target-sdk-version','35','--version-code','8','--version-name','0.4.3',"$taskOutput\resources.zip")
+Invoke-Checked "$taskTools\aapt2.exe" @('link','-o',"$taskOutput\resources.apk",'-I',$taskPlatform,'--manifest',"$taskOutput\AndroidManifest.xml",'--java',"$taskOutput\generated",'-A',"$taskOutput\assets",'--min-sdk-version','29','--target-sdk-version','35','--version-code','8','--version-name','0.4.3',"$taskOutput\resources.zip")
 $taskSources = @(Get-ChildItem -LiteralPath "$taskOutput\src","$taskOutput\generated" -Recurse -Filter *.java | ForEach-Object { $_.FullName })
 Invoke-Checked "$taskJdk\javac.exe" (@('-source','8','-target','8','-encoding','UTF-8','-bootclasspath',"$taskPlatform;$taskTools\core-lambda-stubs.jar",'-d',"$taskOutput\classes") + $taskSources)
 Invoke-Checked "$taskJdk\jar.exe" @('cf',"$taskOutput\classes.jar",'-C',"$taskOutput\classes",'.')

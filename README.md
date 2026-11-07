@@ -4,6 +4,15 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 <img src="Assets/ToolHub.png" width="80" height="80" alt="ToolHub" />
 
+## 下载
+
+| 平台 | 下载 | 要求 |
+| --- | --- | --- |
+| Windows | [ToolHub 0.6.10 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.6.10/ToolHub-0.6.10-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
+| Android | [ToolHub Send 0.4.3 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.6.10/ToolHub-Send-0.4.3-Android.apk) | Android 10 及以上；仅文件互传，可覆盖安装此前同签名版本 |
+
+[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.6.10)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；无线设备电量与显示器亮度取决于硬件支持。
+
 ## 源码
 
 仓库包含 Windows 桌面端和独立的安卓文件互传端。项目源码采用 [MIT 许可证](LICENSE)，第三方组件与互操作参考资料的许可证和声明见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。构建产物、个人设置、运行日志和签名密钥不包含在源码仓库内。

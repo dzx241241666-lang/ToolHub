@@ -24,7 +24,7 @@ try {
         $taskLicenses = Join-Path $PSScriptRoot 'artifacts\ToolHub\licenses'
         New-Item -ItemType Directory -Path $taskLicenses -Force | Out-Null
         foreach ($taskFramework in @('microsoft.netcore.app.runtime.win-x64','microsoft.aspnetcore.app.runtime.win-x64','microsoft.windowsdesktop.app.runtime.win-x64')) {
-            foreach ($taskNotice in @('LICENSE.TXT','THIRD-PARTY-NOTICES.TXT')) {
+            foreach ($taskNotice in @('LICENSE.TXT','LICENSE','THIRD-PARTY-NOTICES.TXT')) {
                 $taskSource = Join-Path $taskPackages "$taskFramework\8.0.33\$taskNotice"
                 if (Test-Path -LiteralPath $taskSource) { Copy-Item -LiteralPath $taskSource -Destination (Join-Path $taskLicenses "$taskFramework-$taskNotice") -Force }
             }
