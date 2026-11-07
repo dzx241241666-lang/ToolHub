@@ -35,6 +35,7 @@ if (!(Test-Path -LiteralPath $taskKey)) {
     Invoke-Checked "$taskJdk\keytool.exe" @('-genkeypair','-keystore',$taskKey,'-alias',$KeyAlias,'-storepass:env','TOOLHUB_KEYSTORE_PASSWORD','-keypass:env','TOOLHUB_KEYSTORE_PASSWORD','-keyalg','RSA','-keysize','3072','-validity','10000','-dname','CN=ToolHub Send','-noprompt')
 }
 $taskApk = Join-Path $taskRoot 'artifacts\ToolHub-Send-Android.apk'
+New-Item -ItemType Directory -Path (Split-Path -Parent $taskApk) -Force | Out-Null
 Invoke-Checked "$taskJdk\java.exe" @('-jar',"$taskTools\lib\apksigner.jar",'sign','--ks',$taskKey,'--ks-key-alias',$KeyAlias,'--ks-pass','env:TOOLHUB_KEYSTORE_PASSWORD','--key-pass','env:TOOLHUB_KEYSTORE_PASSWORD','--out',"$taskOutput\signed.apk","$taskOutput\aligned.apk")
 Invoke-Checked "$taskJdk\java.exe" @('-jar',"$taskTools\lib\apksigner.jar",'verify','--verbose',"$taskOutput\signed.apk")
 Invoke-Checked "$taskTools\aapt2.exe" @('dump','badging',"$taskOutput\signed.apk")
