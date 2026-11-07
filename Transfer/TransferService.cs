@@ -132,7 +132,7 @@ public sealed class TransferService : IAsyncDisposable
     {
         var request = await Body<PrepareTransfer>(context);
         if (!TransferRules.ValidPeer(request.Sender) || request.Files == null || request.Files.Count is < 1 or > TransferRules.MaxFiles ||
-            request.Files.Any(f => f == null || string.IsNullOrWhiteSpace(f.Id) || f.Id.Length > 80 || string.IsNullOrWhiteSpace(f.Name) || f.Name.Length > 512 || f.Size < 0 || f.Size > TransferRules.MaxFileSize || !TransferRules.Hash(f.Sha256)) ||
+            request.Files.Any(f => f == null || string.IsNullOrWhiteSpace(f.Id) || f.Id.Length > 80 || string.IsNullOrWhiteSpace(f.Name) || f.Name.Length > 512 || f.Size < 0 || f.Size > TransferRules.MaxFileSize || f.Mime == TransferPayloads.TextMime && f.Size > TransferPayloads.MaxTextBytes || !TransferRules.Hash(f.Sha256)) ||
             request.Files.Select(f => f.Id).Distinct().Count() != request.Files.Count) throw new TransferError(400, "文件信息无效");
         if (request.Files.Sum(f => f.Size) > TransferRules.MaxFileSize) throw new TransferError(413, "单次传输超过 32 GB");
         var offer = new ReceiveOffer { PeerName = request.Sender.Name, Address = Remote(context), Files = request.Files };
@@ -188,7 +188,7 @@ public sealed class TransferService : IAsyncDisposable
                     written += count; if (written > slot.File.Size) throw new TransferError(400, "文件长度不一致");
                     await file.WriteAsync(buffer.AsMemory(0, count), linked.Token); hash.AppendData(buffer, 0, count);
                     lock (_receiveLock) { slot.Bytes = written; session.LastActivity = DateTime.UtcNow.Ticks; }
-                    Report(new("接收", session.PeerName, slot.File.Name, session.Files.Values.Sum(s => s.Bytes), session.Files.Values.Sum(s => s.File.Size)));
+                    Report(new("接收", session.PeerName, TransferPayloads.Label(slot.File.Name, slot.File.Mime), session.Files.Values.Sum(s => s.Bytes), session.Files.Values.Sum(s => s.File.Size)));
                 }
                 if (written != slot.File.Size) throw new TransferError(400, "文件未完整接收");
                 await file.FlushAsync(linked.Token);
@@ -196,14 +196,18 @@ public sealed class TransferService : IAsyncDisposable
             var digest = Convert.ToHexString(hash.GetHashAndReset());
             if (!digest.Equals(slot.File.Sha256, StringComparison.OrdinalIgnoreCase)) throw new TransferError(422, "文件校验失败");
             linked.Token.ThrowIfCancellationRequested();
-            var saved = TransferRules.SaveUnique(part, session.Directory, slot.File.Name);
+            if (slot.File.Mime == TransferPayloads.FolderMime) Report(new("接收", session.PeerName, "整理文件夹 · " + Path.GetFileNameWithoutExtension(slot.File.Name), session.Files.Values.Sum(s => s.Bytes), session.Files.Values.Sum(s => s.File.Size)), true);
+            string saved;
+            using (var heartbeat = new System.Threading.Timer(_ => Interlocked.Exchange(ref session.LastActivity, DateTime.UtcNow.Ticks), null, TimeSpan.Zero, TimeSpan.FromSeconds(5)))
+                saved = await TransferPayloads.PublishAsync(part, session.Directory, slot.File, linked.Token);
             ReceiveBatch? batch = null;
             lock (_receiveLock)
             {
                 slot.Path = saved; slot.Bytes = slot.File.Size;
                 if (session.Files.Values.All(s => s.Path != null))
                 {
-                    batch = new(session.PeerName, session.Files.Values.Select(s => s.Path!).ToList(), session.Files.Values.Sum(s => s.File.Size), session.Copy);
+                    batch = new(session.PeerName, session.Files.Values.Select(s => s.Path!).ToList(), session.Files.Values.Sum(s => s.File.Size), session.Copy,
+                        session.Files.Count == 1 && slot.File.Mime == TransferPayloads.TextMime ? TransferPayloads.ReadText(saved) : null);
                     if (_session == session) { _session = null; _reserved = false; }
                 }
             }
@@ -255,10 +259,12 @@ public sealed class TransferService : IAsyncDisposable
         if (info.Id == Self.Id) throw new InvalidOperationException("这是本机地址");
         var peer = new TransferPeer(info, ip.ToString(), DateTimeOffset.UtcNow, true); _peers[info.Id] = peer; return peer;
     }
-    public async Task SendAsync(TransferPeer peer, IReadOnlyList<string> paths, CancellationToken cancellation)
+    public Task SendAsync(TransferPeer peer, IReadOnlyList<string> paths, CancellationToken cancellation) =>
+        SendAsync(peer, paths.Select(path => new TransferSource(path, Path.GetFileName(path))).ToArray(), cancellation);
+    public async Task SendAsync(TransferPeer peer, IReadOnlyList<TransferSource> sources, CancellationToken cancellation)
     {
         if (!TransferRules.ValidPeer(peer.Info) || !IPAddress.TryParse(peer.Address, out var address) || !TransferRules.LocalAddress(address)) throw new ArgumentException("设备地址无效");
-        if (paths.Count is < 1 or > TransferRules.MaxFiles) throw new ArgumentException("文件数量须为 1–512");
+        if (sources.Count is < 1 or > TransferRules.MaxFiles) throw new ArgumentException("内容数量须为 1–512");
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellation, _life.Token);
         using var client = Client(peer.Info.CertificateSha256);
         var root = $"https://{peer.Address}:{peer.Info.Port}{TransferRules.Api}";
@@ -269,14 +275,15 @@ public sealed class TransferService : IAsyncDisposable
             if (info?.Id != peer.Info.Id) throw new IOException("设备身份已变化");
         }
         var files = new List<(string Path, TransferFile File)>();
-        foreach (var path in paths)
+        foreach (var source in sources)
         {
+            var path = source.Path;
             linked.Token.ThrowIfCancellationRequested(); var info = new FileInfo(path);
             if (!info.Exists || info.Length > TransferRules.MaxFileSize) throw new IOException("文件不存在或超过 32 GB");
-            Report(new("发送", peer.Name, "校验中 · " + info.Name, 0, paths.Sum(p => new FileInfo(p).Length)), true);
+            Report(new("发送", peer.Name, "校验中 · " + TransferPayloads.Label(source.Name, source.Mime), 0, sources.Sum(p => new FileInfo(p.Path).Length)), true);
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 131072, true);
             var hash = Convert.ToHexString(await SHA256.HashDataAsync(stream, linked.Token)).ToLowerInvariant();
-            files.Add((path, new(Guid.NewGuid().ToString("N"), info.Name, info.Length, "application/octet-stream", hash)));
+            files.Add((path, new(Guid.NewGuid().ToString("N"), source.Name, info.Length, source.Mime, hash)));
         }
         PrepareReply? prepared = null; var succeeded = false; long done = 0; var total = files.Sum(f => f.File.Size);
         try
@@ -291,7 +298,7 @@ public sealed class TransferService : IAsyncDisposable
             foreach (var file in files)
             {
                 if (!prepared.Files.TryGetValue(file.File.Id, out var token)) throw new IOException("对方未接受全部文件");
-                using var content = new FileContent(file.Path, file.File.Size, bytes => Report(new("发送", peer.Name, file.File.Name, done + bytes, total)), linked.Token);
+                using var content = new FileContent(file.Path, file.File.Size, bytes => Report(new("发送", peer.Name, TransferPayloads.Label(file.File.Name, file.File.Mime), done + bytes, total)), linked.Token);
                 var url = root + "/upload?session=" + Uri.EscapeDataString(prepared.Session) + "&file=" + file.File.Id + "&token=" + Uri.EscapeDataString(token);
                 using var upload = await client.PostAsync(url, content, linked.Token);
                 if (!upload.IsSuccessStatusCode) throw new IOException(upload.StatusCode == HttpStatusCode.UnprocessableEntity ? "文件校验失败" : "文件未能发送完成");

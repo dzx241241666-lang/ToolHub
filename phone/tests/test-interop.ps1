@@ -14,7 +14,7 @@ $taskBytes = New-Object byte[] 350000
 [IO.File]::WriteAllBytes("$taskWork\source\empty.bin",[byte[]]@())
 & "$taskJdk\keytool.exe" -genkeypair -keystore "$taskCompile\identity.p12" -storetype PKCS12 -alias interop -storepass test-only -keypass test-only -keyalg EC -groupname secp256r1 -validity 2 -dname 'CN=interop-loopback' -noprompt
 if ($LASTEXITCODE -ne 0) { throw '测试证书生成失败' }
-& "$taskJdk\javac.exe" -encoding UTF-8 -cp $taskJson -d $taskCompile "$taskRoot\phone\src\dev\switchboard\send\PeerEngine.java" "$PSScriptRoot\Interop.java"
+& "$taskJdk\javac.exe" -encoding UTF-8 -cp $taskJson -d $taskCompile "$taskRoot\phone\src\dev\switchboard\send\PeerEngine.java" "$taskRoot\phone\src\dev\switchboard\send\PayloadArchive.java" "$PSScriptRoot\Interop.java"
 if ($LASTEXITCODE -ne 0) { throw '测试核心编译失败' }
 $taskJavaArgs = @('-cp',"$taskCompile;$taskJson",'dev.switchboard.send.Interop',"$taskCompile\identity.p12",$taskWork)
 $taskStart = New-Object Diagnostics.ProcessStartInfo

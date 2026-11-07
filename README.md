@@ -1,6 +1,6 @@
 # ToolHub
 
-Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器亮度、定时关机、局域网互传、无线电量和格式转换。原生 WPF。
+Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器亮度、定时关机、局域网互传、设备电量和格式转换。原生 WPF。
 
 <img src="Assets/ToolHub.png" width="80" height="80" alt="ToolHub" />
 
@@ -8,10 +8,10 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 | 平台 | 下载 | 要求 |
 | --- | --- | --- |
-| Windows | [ToolHub 0.6.10 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.6.10/ToolHub-0.6.10-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
-| Android | [ToolHub Send 0.4.3 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.6.10/ToolHub-Send-0.4.3-Android.apk) | Android 10 及以上；仅文件互传，可覆盖安装此前同签名版本 |
+| Windows | [ToolHub 0.7.0 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.0/ToolHub-0.7.0-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
+| Android | [ToolHub Send 0.5.0 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.0/ToolHub-Send-0.5.0-Android.apk) | Android 10 及以上；局域网互传，可覆盖安装此前同签名版本 |
 
-[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.6.10)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；无线设备电量与显示器亮度取决于硬件支持。
+[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.7.0)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；设备电量与显示器亮度取决于硬件支持。
 
 ## 源码
 
@@ -59,9 +59,11 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 ## 局域网互传
 
-电脑端进入“局域网互传”页即自动启动服务，右上角只显示状态；窗口关闭到托盘后仍可接收。先选择或拖入多个文件，再单击附近设备卡片即发送。没有已选文件时，单击设备会打开文件选择器，选择后直接发送到该设备；发送成功后清空本次选择，失败时保留。接收前逐批确认，可拒绝；“接收后复制文件到剪贴板”将校验完成的文件作为文件列表复制，随后可在资源管理器中粘贴。接收目录默认是用户下载目录下的 `ToolHub`。
+0.7.0 / Android 0.5.0 新增文本弹窗、剪贴板和文件夹发送。选择内容后单击设备直接发送；接收文本可查看与复制，文件夹保留层级、空目录和空文件。同名文件夹自动另存，取消或失败清理本次临时目录。Windows 剪贴板支持文字、位图、文件和文件夹；安卓支持文字及带访问权限的文件、图片 URI。首次在安卓接收文件夹时选择一个文件夹保存位置，此后会记住；普通文件仍在 Downloads / ToolHub Send。两端更新可获得完整体验，旧端仍会收到可打开的文本文件或 ZIP。
 
-安卓安装包：`artifacts/ToolHub-Send-Android.apk`，支持 Android 10 及以上，可覆盖安装旧版。手机端仅包含文件互传，使用“发送 / 接收”底部导航；发送页先选择文件或照片、视频，再单击附近设备直接发送。文件元数据只在选择时后台读取，进度刷新不重建文件列表。接收请求直接弹出确认，两个页面均显示当前传输进度并可取消。支持系统分享入口、接收记录中的打开、分享和复制。文件保存在 `Downloads/ToolHub Send`。通知提供接收、拒绝和停止接收；安卓系统可能限制长期后台运行。手机剪贴板使用文件 URI，能否粘贴取决于目标应用。
+电脑端进入“局域网互传”页即自动启动服务，右上角只显示状态；窗口关闭到托盘后仍可接收。先选择或拖入多个文件，再单击附近设备卡片即发送。没有已选文件时，单击设备会打开文件选择器，选择后直接发送到该设备；发送成功后清空本次选择，失败时保留。接收前逐批确认，可拒绝；“接收后复制到剪贴板”将校验完成的文件作为文件列表复制，随后可在资源管理器中粘贴。接收目录默认是用户下载目录下的 `ToolHub`。
+
+安卓安装包：`artifacts/ToolHub-Send-Android.apk`，支持 Android 10 及以上，可覆盖安装旧版。手机端仅包含局域网互传，使用“发送 / 接收”底部导航；发送页先选择文件或照片、视频，再单击附近设备直接发送。文件元数据只在选择时后台读取，进度刷新不重建文件列表。接收请求直接弹出确认，两个页面均显示当前传输进度并可取消。支持系统分享入口、接收记录中的打开、分享和复制。文件保存在 `Downloads/ToolHub Send`。通知提供接收、拒绝和停止接收；安卓系统可能限制长期后台运行。手机剪贴板使用文件 URI，能否粘贴取决于目标应用。
 
 0.4.1 的安卓身份使用独立 ECDSA P-256 密钥，允许 TLS 提供者所需的原始摘要签名；启动时实际进行一次本机 HTTPS 握手检查。升级后自动发现会更新证书指纹，避免列表保留旧指纹。握手错误与离线、网络错误分别显示。
 

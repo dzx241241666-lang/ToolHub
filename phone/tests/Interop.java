@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.net.*;
 import java.security.cert.X509Certificate;
 import javax.net.ssl.*;
+import java.util.zip.*;
 
 public final class Interop {
     public static void main(String[] args)throws Exception{
@@ -19,26 +20,26 @@ public final class Interop {
         Path received=root.resolve("java-received");Files.createDirectories(received);Files.write(received.resolve("样例.txt"),"existing file".getBytes("UTF-8"));
         PeerEngine.Storage storage=(name,mime,size)->{Path partial=Files.createTempFile(received,"partial-",".tmp");return new PeerEngine.Sink(){
             public OutputStream stream()throws Exception{return Files.newOutputStream(partial);}
-            public PeerEngine.Item commit()throws Exception{Path target=received.resolve(name);int dot=name.lastIndexOf('.');String stem=dot>0?name.substring(0,dot):name;String ext=dot>0?name.substring(dot):"";for(int i=1;Files.exists(target);i++)target=received.resolve(stem+" ("+i+")"+ext);Files.move(partial,target);return new PeerEngine.Item(target.getFileName().toString(),target.toString(),mime,size);}
+            public PeerEngine.Item commit()throws Exception{return publish(partial,received,name,mime,size);}
             public void abort(){try{Files.deleteIfExists(partial);}catch(Exception ignored){}}
         };};
         CompletableFuture<List<PeerEngine.Item>> arrived=new CompletableFuture<>();
+        BlockingQueue<List<PeerEngine.Item>> inbox=new LinkedBlockingQueue<>();
         AtomicBoolean reject=new AtomicBoolean();
         PeerEngine.Events events=new PeerEngine.Events(){
             public void offer(PeerEngine.Offer offer){if(reject.get())offer.reject();else offer.accept(true);}
-            public void received(String peer,List<PeerEngine.Item> items,boolean copy){if(copy)arrived.complete(items);else arrived.completeExceptionally(new Exception("copy option lost"));}
+            public void received(String peer,List<PeerEngine.Item> items,boolean copy){inbox.offer(items);if(copy)arrived.complete(items);else arrived.completeExceptionally(new Exception("copy option lost"));}
             public void progress(String a,String b,String c,long d,long e){}
             public void notice(String message){System.err.println(message);}
         };
         try(PeerEngine engine=new PeerEngine((args.length>4?args[4]:UUID.randomUUID().toString()),"Android core interop","Android",pin,tls,storage,events,args.length>3?Integer.parseInt(args[3]):0,"127.0.0.1",false)){
             engine.start();Files.write(root.resolve("java-ready.json"),new JSONObject().put("port",engine.self.port).toString().getBytes("UTF-8"));
-            if(args.length>2&&args[2].equals("--ui")){
+            if(args.length>2&&args[2].startsWith("--ui")){
                 List<PeerEngine.Item> items=arrived.get(600,TimeUnit.SECONDS);
                 if(items.size()!=1)throw new Exception("UI send file count mismatch");
-                byte[] expected=Files.readAllBytes(root.resolve("source/ui-test.txt"));
-                byte[] actual=Files.readAllBytes(Paths.get(items.get(0).uri));
-                if(!Arrays.equals(expected,actual))throw new Exception("UI send checksum mismatch");
-                Files.write(root.resolve("ui-result.json"),new JSONObject().put("singleDeviceClickSent",true).put("sha256Matched",true).put("personalFilesSent",false).toString().getBytes("UTF-8"));
+                if(args[2].equals("--ui-folder")){Path folder=Paths.get(items.get(0).uri);if(!Files.isDirectory(folder.resolve("nested/empty"))||!Arrays.equals(Files.readAllBytes(root.resolve("source/ui-folder/nested/中文.txt")),Files.readAllBytes(folder.resolve("nested/中文.txt"))))throw new Exception("UI folder mismatch");}
+                else{byte[] expected=Files.readAllBytes(root.resolve("source/ui-test.txt"));byte[] actual=Files.readAllBytes(Paths.get(items.get(0).uri));if(!Arrays.equals(expected,actual))throw new Exception("UI send checksum mismatch");}
+                Files.write(root.resolve("ui-result.json"),new JSONObject().put("singleDeviceClickSent",true).put("sha256Matched",true).put("textPayloadReceived","text".equals(items.get(0).kind)).put("folderPayloadReceived","folder".equals(items.get(0).kind)).put("personalFilesSent",false).toString().getBytes("UTF-8"));
                 Thread.sleep(1000);return;
             }
             Path pcReady=root.resolve("pc-ready.json");long end=System.currentTimeMillis()+45000;while(!Files.exists(pcReady)&&System.currentTimeMillis()<end)Thread.sleep(100);
@@ -47,6 +48,19 @@ public final class Interop {
             engine.send(peer,sources);List<PeerEngine.Item> items=arrived.get(35,TimeUnit.SECONDS);if(items.size()!=sources.size())throw new Exception("count mismatch");
             for(PeerEngine.Source source:sources){String expected=source.name.equals("样例.txt")?"样例 (1).txt":source.name;PeerEngine.Item item=items.stream().filter(i->i.name.equals(expected)).findFirst().get();byte[] actual=Files.readAllBytes(Paths.get(item.uri));byte[] original=Files.readAllBytes(root.resolve("source").resolve(source.name));if(!MessageDigest.isEqual(MessageDigest.getInstance("SHA-256").digest(actual),MessageDigest.getInstance("SHA-256").digest(original)))throw new Exception("checksum mismatch");}
             if(!new String(Files.readAllBytes(received.resolve("样例.txt")),"UTF-8").equals("existing file"))throw new Exception("file overwritten");
+            inbox.poll(5,TimeUnit.SECONDS);
+            String sharedText="共享文本\n中文与 emoji 😀\nhttps://example.com/";byte[] textBytes=sharedText.getBytes("UTF-8");
+            engine.send(peer,Collections.singletonList(new PeerEngine.Source("文本.txt",PayloadArchive.TEXT,textBytes.length,()->new ByteArrayInputStream(textBytes))));
+            List<PeerEngine.Item> textItems=inbox.poll(30,TimeUnit.SECONDS);
+            if(textItems==null||textItems.size()!=1||!"text".equals(textItems.get(0).kind)||!new String(Files.readAllBytes(Paths.get(textItems.get(0).uri)),"UTF-8").equals(sharedText))throw new Exception("text mismatch");
+            Path folderZip=root.resolve("java-folder.zip");try(ZipOutputStream zip=new ZipOutputStream(Files.newOutputStream(folderZip))){zip.putNextEntry(new ZipEntry("nested/empty/"));zip.closeEntry();zip.putNextEntry(new ZipEntry("nested/中文.txt"));zip.write(textBytes);zip.closeEntry();zip.putNextEntry(new ZipEntry("zero.bin"));zip.closeEntry();}
+            engine.send(peer,Collections.singletonList(new PeerEngine.Source("Android 文件夹.zip",PayloadArchive.FOLDER,Files.size(folderZip),()->Files.newInputStream(folderZip))));
+            List<PeerEngine.Item> folderItems=inbox.poll(30,TimeUnit.SECONDS);if(folderItems==null||folderItems.size()!=1)throw new Exception("folder missing");Path folderRoot=Paths.get(folderItems.get(0).uri);
+            if(!Files.isDirectory(folderRoot.resolve("nested/empty"))||Files.size(folderRoot.resolve("zero.bin"))!=0||!new String(Files.readAllBytes(folderRoot.resolve("nested/中文.txt")),"UTF-8").equals(sharedText))throw new Exception("folder mismatch");
+            for(String bad:new String[]{"../escape.txt","/root.txt","nested/../../escape.txt","bad\\file.txt"}){
+                Path invalid=root.resolve("invalid-folder.zip");try(ZipOutputStream zip=new ZipOutputStream(Files.newOutputStream(invalid))){zip.putNextEntry(new ZipEntry(bad));zip.write(1);zip.closeEntry();}
+                boolean refused=false;try(ZipFile zip=new ZipFile(invalid.toFile())){PayloadArchive.inspect(zip);}catch(IOException expected){refused=true;}if(!refused)throw new Exception("unsafe archive accepted");
+            }
             String api="https://127.0.0.1:"+engine.self.port+PeerEngine.API;
             request(api+"/upload?session=bad&file=bad&token=bad",new byte[]{1},403);
             JSONObject metadata=new JSONObject().put("sender",peer.json()).put("files",new JSONArray().put(new JSONObject().put("id","guarded").put("name","guarded.bin").put("mime","application/octet-stream").put("size",3).put("sha256",String.join("",Collections.nCopies(64,"0")))));
@@ -61,10 +75,23 @@ public final class Interop {
             request(api+"/upload?session="+localCancel.getString("session")+"&file=guarded&token="+localCancel.getJSONObject("files").getString("guarded"),new byte[]{1,2,3},403);
             reject.set(true);request(api+"/prepare",body,403);
             try(java.util.stream.Stream<Path> list=Files.list(received)){if(list.anyMatch(p->p.getFileName().toString().startsWith("partial-")))throw new Exception("Temporary file leaked");}
-            Files.write(root.resolve("java-result.json"),new JSONObject().put("success",true).put("collisionPreserved",true).put("sha256Matched",true).put("badChecksumRejected",true).put("cancelledSessionRejected",true).put("wrongTokenRejected",true).put("receiveRejection",true).toString().getBytes("UTF-8"));
+            Files.write(root.resolve("java-result.json"),new JSONObject().put("success",true).put("textMatched",true).put("foldersMatched",true).put("unsafeFoldersRejected",true).put("collisionPreserved",true).put("sha256Matched",true).put("badChecksumRejected",true).put("cancelledSessionRejected",true).put("wrongTokenRejected",true).put("receiveRejection",true).toString().getBytes("UTF-8"));
             // Give the final HTTP upload response time to leave the socket before shutdown.
             Thread.sleep(500);
         }
+    }
+    private static PeerEngine.Item publish(Path partial,Path received,String name,String mime,long size)throws Exception{
+        boolean folder=PayloadArchive.FOLDER.equals(mime),text=PayloadArchive.TEXT.equals(mime);
+        if(text)PayloadArchive.text(Files.newInputStream(partial));
+        int dot=name.lastIndexOf('.');String stem=dot>0?name.substring(0,dot):name,ext=dot>0?name.substring(dot):"";
+        Path target=received.resolve(folder?stem:name);for(int i=1;Files.exists(target);i++)target=received.resolve(stem+" ("+i+")"+(folder?"":ext));
+        if(folder){
+            try(ZipFile zip=new ZipFile(partial.toFile())){
+                List<ZipEntry> entries=PayloadArchive.inspect(zip);Files.createDirectory(target);
+                for(ZipEntry entry:entries){Path path=target.resolve(entry.getName()).normalize();if(!path.startsWith(target))throw new IOException("unsafe path");if(entry.isDirectory()){Files.createDirectories(path);continue;}Files.createDirectories(path.getParent());try(InputStream in=zip.getInputStream(entry);OutputStream out=Files.newOutputStream(path)){PayloadArchive.copy(in,out,entry.getSize(),()->false);}}
+            }Files.delete(partial);
+        }else Files.move(partial,target);
+        return new PeerEngine.Item(target.getFileName().toString(),target.toString(),mime,size,folder?"folder":text?"text":"file");
     }
     private static String request(String url,byte[] data,int expected)throws Exception{
         SSLContext tls=SSLContext.getInstance("TLS");tls.init(null,new TrustManager[]{new X509TrustManager(){public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}public void checkClientTrusted(X509Certificate[] chain,String auth){}public void checkServerTrusted(X509Certificate[] chain,String auth){}}},null);

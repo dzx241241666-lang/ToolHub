@@ -12,11 +12,13 @@ import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.*;
 import android.provider.OpenableColumns;
+import android.provider.DocumentsContract;
 import android.text.TextUtils;
 import android.view.*;
 import android.widget.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.io.*;
 
 public final class MainActivity extends Activity {
     private static final int PAPER = 0xfff4f2ec, INK = 0xff171714, MUTED = 0xff74746c, RED = 0xffc72d25, LINE = 0xffd5d3ca;
@@ -35,7 +37,10 @@ public final class MainActivity extends Activity {
     private LinearLayout sendPage, receivePage, deviceList, fileList, history, transferPanel;
     private TextView deviceName, address, status, fileCount, fileSize, transferText, transferPercent;
     private ProgressBar transferBar;
-    private Button sendTab, receiveTab, addFiles, addMedia, clearFiles, cancel;
+    private Button sendTab, receiveTab, addFiles, addMedia, addFolder, addText, addClipboard, clearFiles, cancel;
+    private boolean acceptAfterDirectory;
+    private String directoryOfferId="";
+    private final Map<String,String[]> cachedDetails = new ConcurrentHashMap<>();
     private CheckBox copy;
 
     private static final class SelectedFile {
@@ -87,13 +92,13 @@ public final class MainActivity extends Activity {
         content.addView(sendScroll, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout fileHeader = row();
-        fileHeader.addView(text("01 / 文件", 12, RED, true), new LinearLayout.LayoutParams(0, -2, 1));
-        clearFiles = button("清空", false, v -> { selected.clear(); selectionRevision++; renderFiles(); });
+        fileHeader.addView(text("01 / 内容", 12, RED, true), new LinearLayout.LayoutParams(0, -2, 1));
+        clearFiles = button("清空", false, v -> clearSelection());
         fileHeader.addView(clearFiles);
         sendPage.addView(fileHeader);
         fileCount = text("0", 44, INK, true);
         sendPage.addView(fileCount);
-        fileSize = text("个文件", 12, MUTED, false);
+        fileSize = text("项内容", 12, MUTED, false);
         sendPage.addView(fileSize);
         LinearLayout pickers = row();
         addFiles = button("文件", true, v -> pickFiles(false));
@@ -103,6 +108,10 @@ public final class MainActivity extends Activity {
         pickers.addView(addMedia, second);
         margin(pickers, 14, 10);
         sendPage.addView(pickers);
+        LinearLayout more = row();
+        addFolder = button("文件夹", false, v -> pickFolder()); addText = button("文本", false, v -> editText()); addClipboard = button("剪贴板", false, v -> readClipboard());
+        more.addView(addFolder, weighted()); LinearLayout.LayoutParams textSpace=weighted();textSpace.leftMargin=dp(8);more.addView(addText,textSpace);
+        LinearLayout.LayoutParams clipSpace=weighted();clipSpace.leftMargin=dp(8);more.addView(addClipboard,clipSpace);margin(more,0,10);sendPage.addView(more);
         fileList = column();
         sendPage.addView(fileList);
 
@@ -163,6 +172,7 @@ public final class MainActivity extends Activity {
         receivePage.addView(copy);
         TextView directory = text("Downloads / ToolHub Send", 12, MUTED, false);
         margin(directory, 6, 24); receivePage.addView(directory);
+        Button folderDirectory=button("文件夹接收目录",false,v->chooseReceiveDirectory(false));margin(folderDirectory,0,16);receivePage.addView(folderDirectory);
         rule(receivePage);
         TextView records = text("02 / 接收记录", 12, RED, true);
         margin(records, 20, 12); receivePage.addView(records);
@@ -178,6 +188,10 @@ public final class MainActivity extends Activity {
         if (saved != null) {
             page = saved.getInt("page"); lastCompleted = saved.getLong("completed");
             ArrayList<String> values = saved.getStringArrayList("files");
+            ArrayList<String> names=saved.getStringArrayList("names"),mimes=saved.getStringArrayList("mimes");
+            if(values!=null&&names!=null&&mimes!=null)for(int i=0;i<values.size()&&i<names.size()&&i<mimes.size();i++)cachedDetails.put(values.get(i),new String[]{names.get(i),mimes.get(i)});
+            acceptAfterDirectory=saved.getBoolean("acceptAfterDirectory");
+            directoryOfferId=saved.getString("directoryOfferId","");
             if (values != null) { List<Uri> uris = new ArrayList<>(); for (String value : values) uris.add(Uri.parse(value)); loadFiles(uris); }
         } else readShared(getIntent());
         showPage(page);
@@ -205,15 +219,20 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onSaveInstanceState(Bundle out) {
         ArrayList<String> values = new ArrayList<>(); for (SelectedFile file : selected) values.add(file.uri.toString());
+        ArrayList<String> names=new ArrayList<>(),mimes=new ArrayList<>();for(SelectedFile file:selected){names.add(file.source.name);mimes.add(file.source.mime);}
+        out.putStringArrayList("names",names);out.putStringArrayList("mimes",mimes);out.putBoolean("acceptAfterDirectory",acceptAfterDirectory);
+        out.putString("directoryOfferId",directoryOfferId);
         out.putStringArrayList("files", values); out.putInt("page", page); out.putLong("completed", lastCompleted);
         super.onSaveInstanceState(out);
     }
     @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); readShared(intent); }
     private void readShared(Intent intent) {
+        if(service!=null&&service.sending){toast("传输中");return;}
         List<Uri> uris = new ArrayList<>();
         if (Intent.ACTION_SEND.equals(intent.getAction())) { Uri value = intent.getParcelableExtra(Intent.EXTRA_STREAM); if (value != null) uris.add(value); }
         if (Intent.ACTION_SEND_MULTIPLE.equals(intent.getAction())) { ArrayList<Uri> values = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM); if (values != null) uris.addAll(values); }
         if (!uris.isEmpty()) { showPage(0); loadFiles(uris); }
+        else if(Intent.ACTION_SEND.equals(intent.getAction())&&intent.getCharSequenceExtra(Intent.EXTRA_TEXT)!=null){selectText(intent.getCharSequenceExtra(Intent.EXTRA_TEXT).toString());showPage(0);}
     }
     private void showPage(int value) {
         page = value;
@@ -226,8 +245,28 @@ public final class MainActivity extends Activity {
         if (media) intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
         startActivityForResult(intent, 1);
     }
+    private void pickFolder(){startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION),2);}
+    private void chooseReceiveDirectory(boolean accept){acceptAfterDirectory=accept;directoryOfferId=accept&&service!=null&&service.pending!=null?service.pending.id:"";Intent picker=new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);Uri prior=AndroidPayloads.receiveTree(this);if(prior!=null)picker.putExtra(DocumentsContract.EXTRA_INITIAL_URI,prior);startActivityForResult(picker,4);}
+    private void clearSelection(){for(SelectedFile file:selected)AndroidPayloads.clean(this,file.uri);selected.clear();selectionRevision++;renderFiles();}
+    private void selectText(String value){if(service!=null&&service.sending){toast("传输中");return;}try{AndroidPayloads.Staged staged=AndroidPayloads.text(this,value);clearSelection();selected.add(new SelectedFile(Uri.fromFile(staged.file),staged.source));renderFiles();}catch(Exception error){toast(error.getMessage()==null?"文本无法读取":error.getMessage());}}
+    private void editText(){
+        EditText field=input("");field.setSingleLine(false);field.setMinLines(6);field.setMaxLines(12);field.setGravity(Gravity.TOP|Gravity.START);
+        if(selected.size()==1&&PayloadArchive.TEXT.equals(selected.get(0).source.mime))try{field.setText(PayloadArchive.text(selected.get(0).source.opener.open()));}catch(Exception ignored){}
+        new AlertDialog.Builder(this).setTitle("文本").setView(field).setNegativeButton("取消",null).setPositiveButton("确定",(d,w)->selectText(field.getText().toString())).show();
+    }
+    private void readClipboard(){
+        try{ClipboardManager manager=getSystemService(ClipboardManager.class);ClipData clip=manager.getPrimaryClip();if(clip==null||clip.getItemCount()==0){toast("剪贴板中没有可发送的内容");return;}
+            List<Uri> uris=new ArrayList<>();for(int i=0;i<clip.getItemCount();i++)if(clip.getItemAt(i).getUri()!=null)uris.add(clip.getItemAt(i).getUri());
+            if(!uris.isEmpty()){clearSelection();loadFiles(uris);}else{StringBuilder text=new StringBuilder();for(int i=0;i<clip.getItemCount();i++){CharSequence value=clip.getItemAt(i).coerceToText(this);if(value!=null){if(text.length()>0)text.append('\n');text.append(value);}}selectText(text.toString());}
+        }catch(Exception error){toast("剪贴板暂不可用");}
+    }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if(request==4){
+            if(result==RESULT_OK&&data!=null&&data.getData()!=null)try{Uri tree=data.getData();if((data.getFlags()&Intent.FLAG_GRANT_WRITE_URI_PERMISSION)==0)throw new IOException("所选目录不可写");getContentResolver().takePersistableUriPermission(tree,data.getFlags()&(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION));getSharedPreferences("send",0).edit().putString("folderDirectory",tree.toString()).apply();if(acceptAfterDirectory&&service!=null&&service.pending!=null&&service.pending.pending()&&service.pending.id.equals(directoryOfferId))service.accept();}catch(Exception error){toast("接收目录不可用");}
+            acceptAfterDirectory=false;dismissOffer();render();return;
+        }
+        if(request==2){if(result==RESULT_OK&&data!=null&&data.getData()!=null){Uri tree=data.getData();try{getContentResolver().takePersistableUriPermission(tree,data.getFlags()&Intent.FLAG_GRANT_READ_URI_PERMISSION);}catch(Exception ignored){}loadFiles(Collections.singletonList(tree));}return;}
         if (request != 1) return;
         if (result != RESULT_OK || data == null) { pendingTarget = null; return; }
         List<Uri> uris = new ArrayList<>();
@@ -238,6 +277,7 @@ public final class MainActivity extends Activity {
         loadFiles(uris);
     }
     private void loadFiles(List<Uri> values) {
+        if(service!=null&&service.sending){toast("传输中");return;}
         if (values.isEmpty()) return;
         loading = true; render();
         final int revision = selectionRevision;
@@ -245,18 +285,21 @@ public final class MainActivity extends Activity {
             List<SelectedFile> result = new ArrayList<>();
             for (Uri uri : values) {
                 if (result.size() >= 512) break;
-                if (uri == null || !"content".equals(uri.getScheme())) continue;
-                try { result.add(describe(uri)); } catch (Exception ignored) { }
+                if (uri == null || !("content".equals(uri.getScheme())||AndroidPayloads.owns(this,uri))) continue;
+                try {
+                    if("content".equals(uri.getScheme())&&(DocumentsContract.isTreeUri(uri)&&!DocumentsContract.isDocumentUri(this,uri)||DocumentsContract.Document.MIME_TYPE_DIR.equals(getContentResolver().getType(uri)))){AndroidPayloads.Staged staged=AndroidPayloads.folder(this,uri);result.add(new SelectedFile(Uri.fromFile(staged.file),staged.source));}
+                    else result.add(describe(uri));
+                } catch (Exception error) { main.post(()->toast(error.getMessage()==null?"内容无法读取":error.getMessage())); }
             }
             main.post(() -> {
-                if (destroyed) return;
+                if (destroyed) {for(SelectedFile file:result)AndroidPayloads.clean(this,file.uri);return;}
                 loading = false;
                 if (revision == selectionRevision) {
                     for (SelectedFile file : result) {
                         boolean exists = false; for (SelectedFile prior : selected) if (prior.uri.equals(file.uri)) exists = true;
                         if (!exists && selected.size() < 512) selected.add(file);
                     }
-                }
+                }else for(SelectedFile file:result)AndroidPayloads.clean(this,file.uri);
                 renderFiles();
                 PeerEngine.Peer target = pendingTarget; pendingTarget = null;
                 if (target != null && !selected.isEmpty()) sendTo(target);
@@ -264,6 +307,10 @@ public final class MainActivity extends Activity {
         });
     }
     private SelectedFile describe(Uri uri) throws Exception {
+        if(AndroidPayloads.owns(this,uri)){
+            String[] meta=cachedDetails.get(uri.toString());if(meta==null)throw new IOException("缓存内容信息不可用");File file=new File(uri.getPath());
+            if(!file.isFile())throw new IOException("缓存内容已失效");return new SelectedFile(uri,new PeerEngine.Source(meta[0],meta[1],file.length(),()->new FileInputStream(file)));
+        }
         ContentResolver resolver = getApplicationContext().getContentResolver();
         String name = "file", mime = resolver.getType(uri); long size = -1;
         try (Cursor cursor = resolver.query(uri, new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE}, null, null, null)) {
@@ -275,29 +322,31 @@ public final class MainActivity extends Activity {
         if (fileList == null) return;
         fileCount.setText(String.format(Locale.ROOT, "%02d", selected.size()));
         long bytes = 0; for (SelectedFile file : selected) if (file.source.size > 0) bytes += file.source.size;
-        fileSize.setText("个文件" + (bytes > 0 ? " · " + size(bytes) : ""));
+        fileSize.setText("项内容" + (bytes > 0 ? " · " + size(bytes) : ""));
         fileList.removeAllViews();
         for (int i = 0; i < Math.min(3, selected.size()); i++) {
             SelectedFile file = selected.get(i);
-            TextView label = text(file.source.name, 13, INK, false);
+            String title=PayloadArchive.TEXT.equals(file.source.mime)?"文本":PayloadArchive.FOLDER.equals(file.source.mime)?file.source.name.replaceFirst("(?i)\\.zip$","")+" · 文件夹":file.source.name;
+            TextView label = text(title, 13, INK, false);
             label.setMaxLines(1); label.setEllipsize(TextUtils.TruncateAt.MIDDLE); label.setPadding(0, dp(7), 0, dp(7));
             label.setOnClickListener(v -> fileSelection()); fileList.addView(label);
         }
-        if (selected.size() > 3) fileList.addView(button("全部文件 · " + selected.size(), false, v -> fileSelection()));
+        if (selected.size() > 3) fileList.addView(button("全部内容 · " + selected.size(), false, v -> fileSelection()));
         render();
     }
     private void fileSelection() {
         if (service != null && service.sending) return;
         String[] names = new String[selected.size()]; boolean[] keep = new boolean[selected.size()]; Arrays.fill(keep, true);
         for (int i = 0; i < names.length; i++) names[i] = selected.get(i).source.name;
-        new AlertDialog.Builder(this).setTitle("已选文件").setMultiChoiceItems(names, keep, (d, index, checked) -> keep[index] = checked)
-            .setNegativeButton("取消", null).setPositiveButton("完成", (d, w) -> { for (int i = keep.length - 1; i >= 0; i--) if (!keep[i]) selected.remove(i); selectionRevision++; renderFiles(); }).show();
+        new AlertDialog.Builder(this).setTitle("已选内容").setMultiChoiceItems(names, keep, (d, index, checked) -> keep[index] = checked)
+            .setNegativeButton("取消", null).setPositiveButton("完成", (d, w) -> { for (int i = keep.length - 1; i >= 0; i--) if (!keep[i]) {AndroidPayloads.clean(this,selected.get(i).uri);selected.remove(i);} selectionRevision++; renderFiles(); }).show();
     }
     private void render() {
         if (destroyed || status == null) return;
         SendService current = service;
         boolean sending = current != null && current.sending;
         addFiles.setEnabled(!sending && !loading); addMedia.setEnabled(!sending && !loading); clearFiles.setEnabled(!sending && !loading && !selected.isEmpty());
+        addFolder.setEnabled(!sending&&!loading);addText.setEnabled(!sending&&!loading);addClipboard.setEnabled(!sending&&!loading);
         if (current == null) return;
         update(status, loading ? "读取文件中" : current.status);
         update(deviceName, current.engine == null ? getSharedPreferences("send", 0).getString("name", Build.MODEL) : current.engine.self.name);
@@ -308,7 +357,7 @@ public final class MainActivity extends Activity {
         cancel.setEnabled(sending || current.receiving);
         if (!sending && current.completedSerial > lastCompleted) {
             lastCompleted = current.completedSerial;
-            if (current.lastSendSucceeded) { selected.clear(); selectionRevision++; renderFiles(); toast(current.status); }
+            if (current.lastSendSucceeded) { clearSelection(); toast(current.status); }
         }
         List<PeerEngine.Peer> peers = current.engine == null ? Collections.emptyList() : current.engine.peers();
         StringBuilder signature = new StringBuilder();
@@ -342,7 +391,7 @@ public final class MainActivity extends Activity {
             TextView label = text(item.name, 15, INK, true); label.setMaxLines(2); margin(label, 12, 4); history.addView(label);
             history.addView(text(size(item.size), 12, MUTED, false));
             LinearLayout actions = row();
-            actions.addView(button("打开", false, v -> open(item)));
+            actions.addView(button("text".equals(item.kind)?"查看文本":"打开", false, v -> open(item)));
             actions.addView(button("分享", false, v -> share(item)));
             actions.addView(button("复制", false, v -> { current.copy(Collections.singletonList(item)); toast(current.status); }));
             margin(actions, 4, 12); history.addView(actions); rule(history);
@@ -353,12 +402,12 @@ public final class MainActivity extends Activity {
         if (offer == null || !offer.pending()) { dismissOffer(); return; }
         if (displayedOffer == offer && offerDialog != null) return;
         dismissOffer(); displayedOffer = offer;
-        StringBuilder message = new StringBuilder(offer.count + " 个文件 · " + size(offer.bytes));
+        StringBuilder message = new StringBuilder((offer.text?"文本":offer.count+" 项内容") + " · " + size(offer.bytes));
         for (int i = 0; i < Math.min(4, offer.names.size()); i++) message.append("\n").append(offer.names.get(i));
         if (offer.names.size() > 4) message.append("\n…");
         offerDialog = new AlertDialog.Builder(this).setTitle(offer.peer).setMessage(message.toString()).setCancelable(false)
             .setNegativeButton("拒绝", (d, w) -> { if (service != null) service.reject(); })
-            .setPositiveButton("接收", (d, w) -> { if (service != null) service.accept(); showPage(1); }).create();
+            .setPositiveButton("接收", (d, w) -> { if(offer.folder&&AndroidPayloads.receiveTree(this)==null)chooseReceiveDirectory(true);else if (service != null) service.accept(); showPage(1); }).create();
         offerDialog.show();
     }
     private void dismissOffer() { if (offerDialog != null) { offerDialog.dismiss(); offerDialog = null; } displayedOffer = null; }
@@ -375,15 +424,19 @@ public final class MainActivity extends Activity {
         LinearLayout body = paddedColumn();
         body.addView(text("设备名称", 12, MUTED, false));
         EditText name = input(""); name.setText(deviceName.getText()); name.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(64)}); body.addView(name);
-        TextView version = text("ToolHub Send / 0.4.3", 12, MUTED, false); margin(version, 14, 10); body.addView(version);
+        TextView version = text("ToolHub Send / 0.5.0", 12, MUTED, false); margin(version, 14, 10); body.addView(version);
         if (service != null && !service.detail.isEmpty()) { TextView detail = text(service.detail, 12, RED, false); detail.setTextIsSelectable(true); body.addView(detail); }
         new AlertDialog.Builder(this).setTitle("设置").setView(body).setNegativeButton("取消", null).setPositiveButton("保存", (d, w) -> { if (service != null) service.setName(name.getText().toString()); }).show();
     }
     private void open(PeerEngine.Item item) {
+        if("text".equals(item.kind)){
+            metadata.execute(()->{try{String value=AndroidPayloads.readText(this,item);main.post(()->{if(destroyed)return;EditText body=input("");body.setSingleLine(false);body.setMinLines(6);body.setMaxLines(12);body.setText(value);body.setKeyListener(null);body.setTextIsSelectable(true);new AlertDialog.Builder(this).setTitle("文本").setView(body).setNegativeButton("关闭",null).setPositiveButton("复制",(d,w)->getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("文本",value))).show();});}catch(Exception error){main.post(()->toast("文本无法读取"));}});return;
+        }
         try { startActivity(new Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.uri), item.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)); }
         catch (Exception error) { toast("没有可打开此文件的应用"); }
     }
     private void share(PeerEngine.Item item) {
+        if("text".equals(item.kind)){metadata.execute(()->{try{String text=AndroidPayloads.readText(this,item);main.post(()->{if(!destroyed)startActivity(Intent.createChooser(new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT,text),"文本分享"));});}catch(Exception error){main.post(()->toast("文本无法读取"));}});return;}
         Intent intent = new Intent(Intent.ACTION_SEND).setType(item.mime).putExtra(Intent.EXTRA_STREAM, Uri.parse(item.uri))
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         intent.setClipData(ClipData.newRawUri(item.name, Uri.parse(item.uri)));

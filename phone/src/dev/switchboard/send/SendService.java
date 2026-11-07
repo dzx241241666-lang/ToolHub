@@ -152,13 +152,17 @@ public final class SendService extends Service implements PeerEngine.Events {
         main.postDelayed(() -> { if (pending == offer && !offer.pending()) { pending = null; getSystemService(NotificationManager.class).cancel(INCOMING); notifyUi(); } }, 121000);
         main.post(() -> {
             if (closed || !offer.pending()) return;
-            Notification notification = notification(offer.peer + " · " + offer.count + " 个文件").setOngoing(false)
-                .addAction(new Notification.Action.Builder(null, "接收", action("accept", 1)).build())
+            Notification notification = notification(offer.peer + " · " + offer.count + " 项内容").setOngoing(false)
+                .addAction(new Notification.Action.Builder(null, "接收", offer.folder&&AndroidPayloads.receiveTree(this)==null?PendingIntent.getActivity(this,3,new Intent(this,MainActivity.class),PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT):action("accept", 1)).build())
                 .addAction(new Notification.Action.Builder(null, "拒绝", action("reject", 2)).build()).build();
             getSystemService(NotificationManager.class).notify(INCOMING, notification);
         });
     }
-    public void accept() { PeerEngine.Offer offer = pending; if (offer != null) { receiving = true; direction = "接收"; percent = 0; progress = offer.peer + " · 等待文件"; offer.accept(copyEnabled()); } clearOffer(); }
+    public void accept() {
+        PeerEngine.Offer offer = pending;
+        if(offer!=null&&offer.folder&&AndroidPayloads.receiveTree(this)==null){status="文件夹接收目录未设置";notifyUi();startActivity(new Intent(this,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));return;}
+        if (offer != null) { receiving = true; direction = "接收"; percent = 0; progress = offer.peer + " · 等待内容"; offer.accept(copyEnabled()); } clearOffer();
+    }
     public void reject() { PeerEngine.Offer offer = pending; if (offer != null) offer.reject(); clearOffer(); }
     private void clearOffer() { pending = null; getSystemService(NotificationManager.class).cancel(INCOMING); notifyUi(); }
     public boolean copyEnabled() { return getSharedPreferences("send", 0).getBoolean("copy", false); }
@@ -200,7 +204,7 @@ public final class SendService extends Service implements PeerEngine.Events {
         FutureTask<Void> job = new FutureTask<Void>(() -> {
             try {
                 active.send(peer, snapshot);
-                status = "已发送 · " + snapshot.size() + " 个文件";
+                status = "已发送 · " + snapshot.size() + " 项内容";
                 detail = "";
                 lastSendSucceeded = true;
             } catch (Exception error) { if (Thread.currentThread().isInterrupted()) status = "已取消"; else failure("发送失败", error); }
@@ -228,7 +232,7 @@ public final class SendService extends Service implements PeerEngine.Events {
             receiving = false;
             synchronized (history) { history.addAll(0, items); while (history.size() > 40) history.remove(history.size() - 1); }
             saveHistory();
-            status = "已接收 · " + items.size() + " 个文件";
+            status = "已接收 · " + items.size() + " 项内容";
             if (copy) copy(items);
             notifyUi();
         });
@@ -236,10 +240,10 @@ public final class SendService extends Service implements PeerEngine.Events {
     public void copy(List<PeerEngine.Item> items) {
         if (items.isEmpty()) return;
         try {
-            ClipData data = ClipData.newUri(getContentResolver(), "ToolHub 文件", Uri.parse(items.get(0).uri));
+            ClipData data = items.size()==1&&"text".equals(items.get(0).kind)?ClipData.newPlainText("文本",AndroidPayloads.readText(this,items.get(0))):ClipData.newUri(getContentResolver(), "ToolHub 文件", Uri.parse(items.get(0).uri));
             for (int i = 1; i < items.size(); i++) data.addItem(new ClipData.Item(Uri.parse(items.get(i).uri)));
             getSystemService(ClipboardManager.class).setPrimaryClip(data);
-            status = "已复制文件到剪贴板";
+            status = "已复制到剪贴板";
         } catch (Exception error) { failure("剪贴板不可用", error); }
         notifyUi();
     }
@@ -261,7 +265,7 @@ public final class SendService extends Service implements PeerEngine.Events {
     private void saveHistory() {
         try {
             JSONArray list = new JSONArray();
-            synchronized (history) { for (PeerEngine.Item item : history) list.put(new JSONObject().put("name", item.name).put("uri", item.uri).put("mime", item.mime).put("size", item.size)); }
+            synchronized (history) { for (PeerEngine.Item item : history) list.put(new JSONObject().put("name", item.name).put("uri", item.uri).put("mime", item.mime).put("size", item.size).put("kind",item.kind)); }
             getSharedPreferences("send", 0).edit().putString("history", list.toString()).apply();
         } catch (Exception error) { Log.w("Switchboard", "记录保存失败", error); }
     }
@@ -270,7 +274,7 @@ public final class SendService extends Service implements PeerEngine.Events {
             JSONArray list = new JSONArray(getSharedPreferences("send", 0).getString("history", "[]"));
             for (int i = 0; i < list.length(); i++) {
                 JSONObject item = list.getJSONObject(i);
-                history.add(new PeerEngine.Item(item.getString("name"), item.getString("uri"), item.getString("mime"), item.getLong("size")));
+                history.add(new PeerEngine.Item(item.getString("name"), item.getString("uri"), item.getString("mime"), item.getLong("size"),item.optString("kind","file")));
             }
         } catch (Exception error) { Log.w("Switchboard", "记录读取失败", error); }
     }

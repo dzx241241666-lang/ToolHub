@@ -18,3 +18,16 @@ jobs:
           dotnet-version: 8.0.x
       - name: Build Windows desktop
         run: dotnet build Switchboard.csproj --configuration Release
+  android:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6.2.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4.0.4
+      - name: Install Android SDK 35
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Build and verify Android APK
+        run: ./phone/build-phone.ps1

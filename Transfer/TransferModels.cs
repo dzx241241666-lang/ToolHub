@@ -19,7 +19,7 @@ public sealed record TransferFile(string Id, string Name, long Size, string Mime
 public sealed record PrepareTransfer(PeerInfo Sender, List<TransferFile> Files);
 public sealed record PrepareReply(string Session, Dictionary<string, string> Files);
 public sealed record ReceiveDecision(bool Accept, bool CopyToClipboard);
-public sealed record ReceiveBatch(string PeerName, List<string> Paths, long Bytes, bool CopyToClipboard);
+public sealed record ReceiveBatch(string PeerName, List<string> Paths, long Bytes, bool CopyToClipboard, string? Text = null);
 public sealed record TransferProgress(string Direction, string PeerName, string FileName, long Completed, long Total);
 public sealed class ReceiveOffer
 {

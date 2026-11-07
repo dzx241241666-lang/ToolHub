@@ -18,12 +18,18 @@ using Forms = System.Windows.Forms;
 
 namespace Switchboard;
 
-public sealed record PickedFile(string Path)
+public sealed record PickedFile(string Path, string? Label = null, string Mime = "application/octet-stream", bool Temporary = false, string? OriginalPath = null, string? PayloadName = null)
 {
-    public string Name => System.IO.Path.GetFileName(Path);
-    public string Details => Name + " · " + TransferRules.Size(new FileInfo(Path).Length);
+    public string Name => Label ?? System.IO.Path.GetFileName(Path);
+    public string Details => Name + " · " + (Mime == TransferPayloads.FolderMime ? "文件夹 · " : Mime == TransferPayloads.TextMime ? "文本 · " : "") + TransferRules.Size(new FileInfo(Path).Length);
+    public TransferSource Source => new(Path, PayloadName ?? Name, Mime);
 }
-public sealed record TransferLog(string Title, string Details, string[] Paths, bool Received);
+public sealed record TransferLog(string Title, string Details, string[] Paths, bool Received, string? Text = null)
+{
+    public bool CanCopy => Received || Text != null;
+    public string CopyLabel => Text == null ? "复制文件" : "复制文本";
+    public string OpenLabel => Text == null ? "文件夹" : "查看文本";
+}
 
 public partial class MainWindow
 {
@@ -79,16 +85,16 @@ public partial class MainWindow
             service.Offered += offer => TransferUi(() =>
             {
                 _transferOffer = offer; TransferIncomingName.Text = offer.PeerName + " · " + offer.Address;
-                TransferIncomingDetails.Text = $"{offer.Files.Count} 个文件 · {TransferRules.Size(offer.Bytes)}";
+                TransferIncomingDetails.Text = offer.Files.Count == 1 && offer.Files[0].Mime == TransferPayloads.TextMime ? "文本 · " + TransferRules.Size(offer.Bytes) : $"{offer.Files.Count} 项内容 · {TransferRules.Size(offer.Bytes)}";
                 TransferIncoming.Visibility = Visibility.Visible;
                 StatusText.Text = "接收请求 · " + offer.PeerName;
-                if (_tray != null) _tray.ShowBalloonTip(5000, "文件接收请求", offer.PeerName + $" · {offer.Files.Count} 个文件", Forms.ToolTipIcon.Info);
+                if (_tray != null) _tray.ShowBalloonTip(5000, "接收请求", offer.PeerName + $" · {offer.Files.Count} 项内容", Forms.ToolTipIcon.Info);
             });
             service.Received += batch => TransferUi(() => _ = ReceivedTransferAsync(batch));
             service.Progress += progress => TransferUi(() =>
             {
                 TransferProgressLabel.Text = progress.Direction + " · " + progress.PeerName + " · " + progress.FileName;
-                TransferProgressBar.IsIndeterminate = progress.FileName.StartsWith("校验中") || progress.FileName == "等待接收";
+                TransferProgressBar.IsIndeterminate = progress.FileName.StartsWith("校验中") || progress.FileName.StartsWith("整理文件夹") || progress.FileName == "等待接收";
                 TransferProgressBar.Value = progress.Total == 0 ? 100 : Math.Clamp(progress.Completed * 100d / progress.Total, 0, 100);
                 TransferProgressBytes.Text = TransferRules.Size(progress.Completed) + " / " + TransferRules.Size(progress.Total);
             });
@@ -124,19 +130,14 @@ public partial class MainWindow
         if (dialog.ShowDialog() != Forms.DialogResult.OK) return;
         _settings.Transfer.ReceiveDirectory = dialog.SelectedPath; TransferDirectory.Text = dialog.SelectedPath; _transfer?.SetReceiveDirectory(dialog.SelectedPath); Save();
     }
-    private void TransferAddFiles(object sender, RoutedEventArgs e)
+    private async void TransferAddFiles(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "传输文件" };
-        if (dialog.ShowDialog(this) == true) AddTransferFiles(dialog.FileNames);
+        if (dialog.ShowDialog(this) == true) await AddTransferFilesAsync(dialog.FileNames);
     }
-    private void AddTransferFiles(IEnumerable<string> paths)
-    {
-        foreach (var path in paths.Where(File.Exists)) if (_transferFiles.All(f => f.Path != path) && _transferFiles.Count < TransferRules.MaxFiles) _transferFiles.Add(new(path));
-        TransferFileCount.Text = $"{_transferFiles.Count} 个文件";
-    }
-    private void TransferClearFiles(object sender, RoutedEventArgs e) { if (_transferSend != null) return; _transferFiles.Clear(); TransferFileCount.Text = "0 个文件"; }
-    private void TransferDrop(object sender, DragEventArgs e)
-    { if (_transferSend == null && e.Data.GetData(DataFormats.FileDrop) is string[] paths) AddTransferFiles(paths); e.Handled = true; }
+    private void TransferClearFiles(object sender, RoutedEventArgs e) { if (_transferSend != null || _transferPrepare != null) return; ClearTransferSelection(); }
+    private async void TransferDrop(object sender, DragEventArgs e)
+    { e.Handled = true; if (_transferSend == null && _transferPrepare == null && e.Data.GetData(DataFormats.FileDrop) is string[] paths) await AddTransferFilesAsync(paths); }
     private async void TransferAddPeer(object sender, RoutedEventArgs e)
     {
         await StartTransferAsync();
@@ -149,42 +150,45 @@ public partial class MainWindow
     private async void TransferDeviceClick(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { DataContext: TransferPeer peer }) return;
-        if (_transferSend != null) return;
+        if (_transferSend != null || _transferPrepare != null) return;
         await StartTransferAsync(); if (_transfer == null || _transferSend != null) return;
         if (_transferFiles.Count == 0)
         {
             var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "传输至 " + peer.Name };
             if (dialog.ShowDialog(this) != true) return;
-            AddTransferFiles(dialog.FileNames);
+            await AddTransferFilesAsync(dialog.FileNames);
             if (_transferFiles.Count == 0) return;
         }
-        _transferSend = new(); TransferPeers.IsEnabled = false; TransferPick.IsEnabled = false; TransferOutgoingCancel.Visibility = Visibility.Visible; TransferMessage.Text = "";
-        var paths = _transferFiles.Select(f => f.Path).ToArray();
+        _transferSend = new(); SetTransferSelectionEnabled(false); TransferOutgoingCancel.Visibility = Visibility.Visible; TransferMessage.Text = "";
+        var selection = _transferFiles.ToArray(); var paths = selection.Select(f => f.OriginalPath ?? f.Path).ToArray();
         try
         {
-            await _transfer.SendAsync(peer, paths, _transferSend.Token);
-            AddTransferLog(new("已发送 · " + peer.Name, string.Join("、", paths.Select(Path.GetFileName)), paths, false));
-            _transferFiles.Clear(); TransferFileCount.Text = "0 个文件";
+            await _transfer.SendAsync(peer, selection.Select(f => f.Source).ToArray(), _transferSend.Token);
+            var text = selection.Length == 1 && selection[0].Mime == TransferPayloads.TextMime ? TransferPayloads.ReadText(selection[0].Path) : null;
+            AddTransferLog(new("已发送 · " + peer.Name, string.Join("、", selection.Select(f => f.Name)), paths, false, text));
+            ClearTransferSelection();
             TransferMessage.Text = "发送完成";
         }
         catch (Exception error) { TransferFailure(error); }
-        finally { _transferSend.Dispose(); _transferSend = null; if (!_disposed) { TransferPeers.IsEnabled = true; TransferPick.IsEnabled = true; TransferOutgoingCancel.Visibility = Visibility.Collapsed; TransferProgressBar.IsIndeterminate = false; } }
+        finally { _transferSend.Dispose(); _transferSend = null; if (!_disposed) { SetTransferSelectionEnabled(true); TransferOutgoingCancel.Visibility = Visibility.Collapsed; TransferProgressBar.IsIndeterminate = false; } }
     }
-    private void TransferCancelOutgoing(object sender, RoutedEventArgs e) => _transferSend?.Cancel();
+    private void TransferCancelOutgoing(object sender, RoutedEventArgs e) { _transferSend?.Cancel(); _transferPrepare?.Cancel(); }
     private void TransferAccept(object sender, RoutedEventArgs e) { _transferOffer?.Accept(TransferAutoCopy.IsChecked == true); TransferIncoming.Visibility = Visibility.Collapsed; }
     private void TransferReject(object sender, RoutedEventArgs e) { _transferOffer?.Reject(); TransferIncoming.Visibility = Visibility.Collapsed; }
     private async Task ReceivedTransferAsync(ReceiveBatch batch)
     {
         var copied = false;
-        if (batch.CopyToClipboard) copied = await CopyTransferFilesAsync(batch.Paths);
-        AddTransferLog(new("已接收 · " + batch.PeerName, string.Join("、", batch.Paths.Select(Path.GetFileName)) + (copied ? " · 已复制" : ""), batch.Paths.ToArray(), true));
+        if (batch.CopyToClipboard) copied = batch.Text != null ? await CopyTransferTextAsync(batch.Text) : await CopyTransferFilesAsync(batch.Paths);
+        var details = batch.Text == null ? string.Join("、", batch.Paths.Select(Path.GetFileName)) : batch.Text.Replace('\r', ' ').Replace('\n', ' ');
+        if (details.Length > 120) details = details[..120] + "…";
+        AddTransferLog(new("已接收 · " + batch.PeerName, details + (copied ? " · 已复制" : ""), batch.Paths.ToArray(), true, batch.Text));
         TransferMessage.Text = batch.CopyToClipboard && !copied ? "接收完成，剪贴板暂不可用" : copied ? "接收完成 · 已复制到剪贴板" : "接收完成";
-        StatusText.Text = batch.PeerName + $" · 已接收 {batch.Paths.Count} 个文件";
+        StatusText.Text = batch.PeerName + $" · 已接收 {batch.Paths.Count} 项内容";
     }
     private void AddTransferLog(TransferLog log) { _transferLogs.Insert(0, log); while (_transferLogs.Count > 30) _transferLogs.RemoveAt(_transferLogs.Count - 1); }
     private static async Task<bool> CopyTransferFilesAsync(IEnumerable<string> paths)
     {
-        var existing = paths.Where(File.Exists).ToArray(); if (existing.Length == 0) return false;
+        var existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToArray(); if (existing.Length == 0) return false;
         var list = new StringCollection(); list.AddRange(existing);
         for (var attempt = 0; attempt < 4; attempt++)
         {
@@ -194,11 +198,13 @@ public partial class MainWindow
         return false;
     }
     private async void TransferCopyFiles(object sender, RoutedEventArgs e)
-    { if (sender is Button { DataContext: TransferLog log }) TransferMessage.Text = await CopyTransferFilesAsync(log.Paths) ? "已复制文件" : "文件或剪贴板不可用"; }
+    { if (sender is Button { DataContext: TransferLog log }) TransferMessage.Text = (log.Text != null ? await CopyTransferTextAsync(log.Text) : await CopyTransferFilesAsync(log.Paths)) ? "已复制到剪贴板" : "内容或剪贴板不可用"; }
     private void TransferOpenFolder(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: TransferLog log } || log.Paths.Length == 0) return;
-        var directory = Path.GetDirectoryName(log.Paths[0]);
+        if (sender is not Button { DataContext: TransferLog log }) return;
+        if (log.Text != null) { ShowTransferText(log.Text, true); return; }
+        if (log.Paths.Length == 0) return;
+        var directory = Directory.Exists(log.Paths[0]) ? log.Paths[0] : Path.GetDirectoryName(log.Paths[0]);
         if (directory != null && Directory.Exists(directory)) Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
     }
     private void TransferCopyAddress(object sender, RoutedEventArgs e)
@@ -215,7 +221,8 @@ public partial class MainWindow
     private void TransferNavClick(object sender, RoutedEventArgs e) => Navigate(3);
     private void DisposeTransfer()
     {
-        _transferTimer.Stop(); _transferOffer?.Reject(); _transferSend?.Cancel();
+        _transferTimer.Stop(); _transferOffer?.Reject(); _transferSend?.Cancel(); _transferPrepare?.Cancel();
+        if (_transferSend == null) ClearTransferSelection();
         if (_transfer != null) _ = _transfer.DisposeAsync();
     }
 }
