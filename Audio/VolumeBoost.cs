@@ -54,6 +54,13 @@ internal sealed class VolumeBoost
         return guid.ToString("B");
     }
     public static double Decibels(int percent) => 20 * Math.Log10(Math.Clamp(percent, 100, Maximum) / 100d);
+    internal static bool IsDefaultSample(string text)
+    {
+        var lines = text.Replace("\r\n", "\n").Trim();
+        const string basic = "Preamp: -6 dB\nInclude: example.txt";
+        const string flat = "\nGraphicEQ: 25 0; 40 0; 63 0; 100 0; 160 0; 250 0; 400 0; 630 0; 1000 0; 1600 0; 2500 0; 4000 0; 6300 0; 10000 0; 16000 0";
+        return lines == basic || lines == basic + flat;
+    }
     public static string? InstallPath
     {
         get { using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\EqualizerAPO"); return key?.GetValue("InstallPath") as string; }
@@ -117,7 +124,7 @@ internal sealed class VolumeBoost
             var main = Path.Combine(config, "config.txt");
             // Only neutralize the exact sample shipped by our newly requested
             // installation. Existing custom equalizers are always retained.
-            if (File.Exists(main) && ReadText(main).Replace("\r\n", "\n").Trim() == "Preamp: -6 dB\nInclude: example.txt")
+            if (File.Exists(main) && IsDefaultSample(ReadText(main)))
             {
                 if (!File.Exists(main + ".toolhub-original")) File.Copy(main, main + ".toolhub-original", false);
                 AtomicWrite(main, "# ToolHub: neutral initial configuration\n");

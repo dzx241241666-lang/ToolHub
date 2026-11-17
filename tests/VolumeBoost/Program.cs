@@ -9,6 +9,8 @@ var second = "{ef9f984f-e5db-4f3e-b6b5-c19098a8c543}";
 Check(Math.Abs(VolumeBoost.Decibels(200) - 6.020599913) < 1e-8, "200 percent is a real 2x linear gain (+6.0206 dB)");
 Check(VolumeBoost.Decibels(100) == 0, "100 percent is unity gain");
 Check(VolumeBoost.Decibels(900) == VolumeBoost.Decibels(200), "Gain has an explicit upper bound");
+Check(VolumeBoost.IsDefaultSample("Preamp: -6 dB\r\nInclude: example.txt\r\nGraphicEQ: 25 0; 40 0; 63 0; 100 0; 160 0; 250 0; 400 0; 630 0; 1000 0; 1600 0; 2500 0; 4000 0; 6300 0; 10000 0; 16000 0\r\n"), "Fresh upstream sample EQ is recognized before neutral initialization");
+Check(!VolumeBoost.IsDefaultSample("Preamp: -5 dB\nInclude: example.txt"), "Personalized EQ is never mistaken for the installer sample");
 Check(VolumeBoost.DeviceGuid("{0.0.0.00000000}." + guid) == guid, "Output endpoint matches only its exact GUID");
 Reject(() => VolumeBoost.DeviceGuid("{0.0.1.00000000}." + guid), "Capture endpoints cannot be boosted");
 Reject(() => VolumeBoost.DeviceGuid("Device: all\nPreamp: 99 dB"), "Endpoint text cannot inject APO commands");
