@@ -63,11 +63,17 @@ public partial class MainWindow : Window
         ShowWireless.IsChecked = _settings.Sections.Wireless;
         ShowConversion.IsChecked = _settings.Sections.Conversion;
         ApplySectionVisibility();
-        Loaded += OnLoaded;
+        Loaded += (_, _) => InitializeRuntime();
         Closing += OnClosing;
         _timer.Tick += OnTick;
     }
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    public void Start()
+    {
+        // A tray launch must not interrupt WPF's first Show/Loaded/render pass with Hide().
+        if (_background) InitializeRuntime();
+        else Show();
+    }
+    private void InitializeRuntime()
     {
         if (_hotkeys != null) return;
         _hotkeys = new(new WindowInteropHelper(this).EnsureHandle());
@@ -86,7 +92,6 @@ public partial class MainWindow : Window
         if (_store.Warning != null) StatusText.Text = _store.Warning;
         try { _foreground.Poll(); SyncTarget(); RefreshVolume(); } catch (Exception error) { Report(error, false); }
         _timer.Start();
-        if (_background) Hide();
     }
     private void CreateTray()
     {

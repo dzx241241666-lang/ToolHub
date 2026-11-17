@@ -14,7 +14,7 @@
         <Button x:Name="WirelessNav" Grid.Row="5" Style="{StaticResource Nav}" Click="WirelessNavClick" BorderThickness="0" Padding="12,14" Margin="0,4,0,0"><Grid Width="100"><TextBlock Text="设备电量"/></Grid></Button>
         <Button x:Name="ConversionNav" Grid.Row="6" Style="{StaticResource Nav}" Click="ConversionNavClick" BorderThickness="0" Padding="12,14" Margin="0,4,0,0"><Grid Width="100"><TextBlock Text="格式转换"/></Grid></Button>
         <Button x:Name="SettingsNav" Style="{StaticResource Nav}" Grid.Row="7" Click="SettingsNavClick" BorderThickness="0" Padding="12,14" Margin="0,4,0,0"><Grid Width="100"><TextBlock Text="设置"/></Grid></Button>
-        <StackPanel Grid.Row="9"><TextBlock Text="LOCAL / 0.7.0" FontFamily="Consolas" Foreground="{StaticResource Muted}" FontSize="10"/></StackPanel>
+        <StackPanel Grid.Row="9"><TextBlock Text="LOCAL / 0.7.1" FontFamily="Consolas" Foreground="{StaticResource Muted}" FontSize="10"/></StackPanel>
       </Grid></Border>
       <Grid Grid.Column="1" Margin="32,28,32,24">
         <Grid x:Name="AudioPage">
@@ -139,7 +139,7 @@
           <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel>
             <Border BorderBrush="{StaticResource Ink}" BorderThickness="0,1,0,0" Padding="0,20,0,16"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions><TextBlock Text="运行" FontSize="19" FontWeight="SemiBold"/><StackPanel Grid.Column="1"><CheckBox x:Name="StartupCheck" Content="开机启动" Checked="StartupChanged" Unchecked="StartupChanged"/><CheckBox x:Name="OverlayCheck" Content="快捷键浮层" Checked="OverlayChanged" Unchecked="OverlayChanged" Margin="0,14,0,0"/></StackPanel></Grid></Border>
 <Border BorderBrush="{StaticResource Rule}" BorderThickness="0,1,0,0" Padding="0,20"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/></Grid.ColumnDefinitions><TextBlock Text="栏目显示" FontSize="19" FontWeight="SemiBold"/><controls:HoldReorderPanel x:Name="SectionOptions" Grid.Column="1" OrderChanged="SectionOrderChanged" ToolTip="长按拖动排序"><CheckBox x:Name="ShowAudio" Tag="0" Content="音频" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/><CheckBox x:Name="ShowShutdown" Tag="1" Content="定时关机" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/><CheckBox x:Name="ShowBrightness" Tag="2" Content="显示器亮度" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/><CheckBox x:Name="ShowTransfer" Tag="3" Content="局域网互传" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/><CheckBox x:Name="ShowConversion" Tag="6" Content="格式转换" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/><CheckBox x:Name="ShowWireless" Tag="5" Content="设备电量" Checked="SectionVisibilityChanged" Unchecked="SectionVisibilityChanged"/></controls:HoldReorderPanel></Grid></Border>
-            <Grid Margin="0,20,0,8"><TextBlock Text="ToolHub 0.7.0" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="11"/><Button Content="退出" HorizontalAlignment="Right" Width="100" Click="ExitClick"/></Grid>
+            <Grid Margin="0,20,0,8"><TextBlock Text="ToolHub 0.7.1" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="11"/><Button Content="退出" HorizontalAlignment="Right" Width="100" Click="ExitClick"/></Grid>
           </StackPanel></ScrollViewer>
         </Grid>
       </Grid>

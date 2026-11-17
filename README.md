@@ -8,10 +8,10 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 | 平台 | 下载 | 要求 |
 | --- | --- | --- |
-| Windows | [ToolHub 0.7.0 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.0/ToolHub-0.7.0-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
-| Android | [ToolHub Send 0.5.0 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.0/ToolHub-Send-0.5.0-Android.apk) | Android 10 及以上；局域网互传，可覆盖安装此前同签名版本 |
+| Windows | [ToolHub 0.7.1 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.1/ToolHub-0.7.1-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
+| Android | [ToolHub Send 0.5.0 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.1/ToolHub-Send-0.5.0-Android.apk) | Android 10 及以上；局域网互传，可覆盖安装此前同签名版本 |
 
-[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.7.0)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；设备电量与显示器亮度取决于硬件支持。
+[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.7.1)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；设备电量与显示器亮度取决于硬件支持。
 
 ## 源码
 
@@ -20,6 +20,8 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 开发与问题反馈见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 0.6.6 更名为 ToolHub，采用红底白色锤形 T 图标。沿用原设置目录、传输身份、协议和定时关机计划；已保存的接收目录保持原路径。安卓端为 ToolHub Send，可覆盖安装旧版。
+
+0.7.1 修复开机自启动后的主窗口黑屏：后台启动直接初始化托盘和服务，首次打开时正常绘制窗口。
 
 ## 运行
 

@@ -78,7 +78,7 @@ public partial class App : System.Windows.Application
         if (!created) { _showEvent.Set(); Shutdown(); return; }
         var window = new MainWindow(e.Args.Contains("--background")); MainWindow = window;
         _wait = ThreadPool.RegisterWaitForSingleObject(_showEvent, (_, _) => Dispatcher.BeginInvoke(window.ShowMain), null, Timeout.Infinite, false);
-        window.Show();
+        window.Start();
         SessionEnding += (_, _) => window.Exit();
     }
     protected override void OnExit(ExitEventArgs e)
