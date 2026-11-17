@@ -24,6 +24,18 @@ public partial class App : System.Windows.Application
             return;
         }
         DispatcherUnhandledException += (_, args) => { SettingsStore.Log(args.Exception); System.Windows.MessageBox.Show(args.Exception.Message, "ToolHub", MessageBoxButton.OK, MessageBoxImage.Error); args.Handled = true; };
+        if (e.Args.Length == 2 && e.Args[0] is "--volume-boost-setup" or "--volume-boost-prepare")
+        {
+            try
+            {
+                if (e.Args[0] == "--volume-boost-prepare") Audio.VolumeBoost.Prepare();
+                else System.Threading.Tasks.Task.Run(() => Audio.VolumeBoost.ConfigureAsync(new Progress<string>())).GetAwaiter().GetResult();
+                File.WriteAllText(e.Args[1], JsonSerializer.Serialize(new { Installed = true, ConfigPath = Audio.VolumeBoost.ConfigPath }));
+                Shutdown(0);
+            }
+            catch (Exception error) { File.WriteAllText(e.Args[1], error.ToString()); Shutdown(1); }
+            return;
+        }
         if (e.Args.Length == 2 && e.Args[0] == "--rapoo-diagnose")
         {
             try { var samples = System.Threading.Tasks.Task.Run(() => Wireless.RapooBattery.ProbeAsync(true)).GetAwaiter().GetResult(); File.WriteAllText(e.Args[1], JsonSerializer.Serialize(samples, new JsonSerializerOptions { WriteIndented = true })); Shutdown(0); }

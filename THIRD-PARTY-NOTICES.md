@@ -55,3 +55,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+# Optional volume boost component
+
+Volume amplification uses the separately installed Equalizer APO 1.4.2 through its documented configuration files. ToolHub does not include or link Equalizer APO code or binaries. The installer is downloaded only on request from the upstream project and verified with SHA-256 `7403be7427bbe1936a40dded082829b6e217fc4f5990fee5cba501f0ae055afa`.
+
+Equalizer APO is copyright Jonas Thedering and contributors and licensed under GPL-2.0-or-later. Upstream downloads, source and license: <https://sourceforge.net/projects/equalizerapo/> and <https://sourceforge.net/p/equalizerapo/code/ci/1.4.2/tree/>. Configuration reference: <https://sourceforge.net/p/equalizerapo/wiki/Configuration%20reference/>.

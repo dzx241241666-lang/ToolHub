@@ -8,10 +8,10 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 | 平台 | 下载 | 要求 |
 | --- | --- | --- |
-| Windows | [ToolHub 0.7.1 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.1/ToolHub-0.7.1-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
-| Android | [ToolHub Send 0.5.0 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.1/ToolHub-Send-0.5.0-Android.apk) | Android 10 及以上；局域网互传，可覆盖安装此前同签名版本 |
+| Windows | [ToolHub 0.7.2 便携版](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.2/ToolHub-0.7.2-win-x64.zip) | Windows 10 / 11，64 位；解压后运行 `ToolHub.exe`，无需安装 .NET |
+| Android | [ToolHub Send 0.5.0 APK](https://github.com/dzx241241666-lang/ToolHub/releases/download/v0.7.2/ToolHub-Send-0.5.0-Android.apk) | Android 10 及以上；局域网互传，可覆盖安装此前同签名版本 |
 
-[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.7.1)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；设备电量与显示器亮度取决于硬件支持。
+[完整发布页与校验文件](https://github.com/dzx241241666-lang/ToolHub/releases/tag/v0.7.2)。Windows 包已包含音视频转换组件，`tools` 文件夹与 EXE 一起保留。Office 文档转换需要本机安装 Microsoft Office 或 LibreOffice；设备电量与显示器亮度取决于硬件支持。
 
 ## 源码
 
@@ -39,7 +39,7 @@ Windows 10 1803+ / Windows 11 x64 桌面工具，支持音频输出、显示器�
 
 全部模式：设置系统三种默认输出角色，并切换现有音频会话的应用；音量快捷键调节系统默认输出的主音量。新打开且跟随默认输出的应用使用新设备，其他未运行应用已有的单独输出偏好仍由 Windows 保留。
 
-界面底部滑块和静音始终控制当前显示的输出设备。每行勾选项决定设备是否参与循环。预设保留离线设备，设备恢复后继续有效。
+界面底部滑块和静音始终控制当前显示的输出设备。音量区域新增“音量增强”，配置 Equalizer APO 后可在 100%–200% 之间放大输出信号（200% 对应额外 +6.02 dB）。增强作用于所选输出设备，也支持“全部应用”模式的音量快捷键；前台应用单独调节仍为 0–100%。首次通过“安装组件”完成管理员安装和播放设备选择；组件可能需要重启音频服务或电脑。支持每台设备独立保存增益，关闭增强恢复零额外增益；退出工具后当前增益仍由系统音频组件保持。系统音量从 100% 降低时清除该设备的额外增益。超过 100% 可能失真；独占、ASIO、RAW 以及关闭音频增强的输出可能绕过组件。组件未安装或设备未配置时保持原 0–100% 控制。每行勾选项决定设备是否参与循环。预设保留离线设备，设备恢复后继续有效。
 
 音频页直接单击预设、设备循环或音量旁显示的快捷键即可录入新组合键。录入期间暂停全局快捷键，保存或失焦后恢复；Esc 取消。重复组合键或系统占用会保留原键并在状态栏显示原因。音量步长也位于音频页。
 

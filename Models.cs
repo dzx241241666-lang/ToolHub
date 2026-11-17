@@ -57,6 +57,7 @@ public sealed class AppSettings
     public bool HotkeysEnabled { get; set; } = true;
     public bool ShowOverlay { get; set; } = true;
     public int VolumeStep { get; set; } = 2;
+    public bool VolumeBoostEnabled { get; set; }
     public List<string> ExcludedFromCycle { get; set; } = new();
     public List<Preset> Presets { get; set; } = Enumerable.Range(1, 6).Select(i => new Preset { Shortcut = $"Alt+{i}" }).ToList();
     public string PreviousShortcut { get; set; } = "Alt+Left";

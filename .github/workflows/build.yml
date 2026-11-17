@@ -18,6 +18,8 @@ jobs:
           dotnet-version: 8.0.x
       - name: Build Windows desktop
         run: dotnet build Switchboard.csproj --configuration Release
+      - name: Verify volume boost configuration
+        run: dotnet run --project tests/VolumeBoost/VolumeBoost.csproj --configuration Release
   android:
     runs-on: windows-latest
     steps:

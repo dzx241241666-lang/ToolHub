@@ -78,6 +78,7 @@ public partial class MainWindow : Window
         if (_hotkeys != null) return;
         _hotkeys = new(new WindowInteropHelper(this).EnsureHandle());
         _hotkeys.Pressed += HotkeyPressed;
+        InitializeVolumeBoost();
         try { RefreshDevices(); }
         catch (Exception error) { Report(error); }
         BuildShortcuts();
@@ -142,6 +143,7 @@ public partial class MainWindow : Window
     private void RefreshDevices()
     {
         var found = _audio.Devices();
+        foreach (var device in found) device.Volume = DisplayVolume(device.Id, device.Volume);
         if (!_settings.Initialized && found.Count > 0)
         {
             for (var i = 0; i < Math.Min(6, found.Count); i++) { _settings.Presets[i].DeviceId = found[i].Id; _settings.Presets[i].DeviceName = found[i].Name; }
@@ -305,8 +307,8 @@ public partial class MainWindow : Window
             if (_settings.AllApplications)
             {
                 var device = _audio.DefaultId() ?? throw new InvalidOperationException("没有默认输出设备");
-                var before = _audio.Volume(device); var after = Math.Clamp(before.Level + delta, 0, 100);
-                _audio.SetVolume(device, after);
+                var before = _audio.Volume(device); var after = Math.Clamp(DisplayVolume(device, before.Level) + delta, 0, DeviceVolumeLimit(device));
+                SetDeviceVolume(device, after);
                 if (delta > 0 && before.Muted) _audio.SetMute(device, false);
                 _activeDevice = device; Present($"音量 {after}%", _devices.FirstOrDefault(d => d.Id == device)?.Name ?? "系统");
             }
@@ -370,11 +372,13 @@ public partial class MainWindow : Window
         _updating = true;
         try
         {
+            UpdateVolumeBoost();
             VolumeSlider.IsEnabled = MuteCheck.IsEnabled = device != null;
             VolumeDeviceName.Text = device?.Name ?? "—";
             if (device == null) { VolumeNumber.Text = "—"; return; }
             var volume = _audio.Volume(device.Id);
-            VolumeSlider.Value = volume.Level; MuteCheck.IsChecked = volume.Muted; VolumeNumber.Text = volume.Level + "%";
+            var level = DisplayVolume(device.Id, volume.Level);
+            VolumeSlider.Value = level; MuteCheck.IsChecked = volume.Muted; VolumeNumber.Text = level + "%";
         }
         finally { _updating = false; }
     }
@@ -408,7 +412,7 @@ public partial class MainWindow : Window
     private void VolumeChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (_updating || _initializing || _activeDevice == null) return;
-        try { var level = (int)Math.Round(e.NewValue); _audio.SetVolume(_activeDevice, level); VolumeNumber.Text = level + "%"; } catch (Exception error) { Report(error); }
+        try { var level = (int)Math.Round(e.NewValue); SetDeviceVolume(_activeDevice, level); VolumeNumber.Text = level + "%"; } catch (Exception error) { RefreshVolume(); Report(error); }
     }
     private void MuteChanged(object sender, RoutedEventArgs e) { if (_updating || _initializing || _activeDevice == null) return; try { _audio.SetMute(_activeDevice, MuteCheck.IsChecked == true); } catch (Exception error) { Report(error); } }
     private void OverlayChanged(object sender, RoutedEventArgs e) { if (_initializing) return; _settings.ShowOverlay = OverlayCheck.IsChecked == true; Save(); }
